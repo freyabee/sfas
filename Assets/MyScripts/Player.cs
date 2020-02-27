@@ -4,6 +4,7 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody))]
 public class Player : MonoBehaviour
 {
+    public CameraFollower camFollow;
     private Rigidbody rb;
     public GridGenerator grid;
     public float CubeSpeed = 10f;
@@ -11,7 +12,9 @@ public class Player : MonoBehaviour
     private float gridWidth;
     private float offset;
     private int score;
-
+    bool spawned = false;
+    bool paused = false;
+    bool falling = false;
     private void Awake()
     {
         score = 0;
@@ -20,41 +23,71 @@ public class Player : MonoBehaviour
     // Start is called before the first frame update
     private void Start()
     {
+
         gridWidth = grid.GetGridWidth();
         offset = grid.GetTileOffset();
         rb = GetComponent<Rigidbody>();
-        transform.localPosition = new Vector3(-(grid.GetGridWidth() / 2) + offset, 5.9f, -(grid.GetGridWidth() / 2) + offset);
+        
+    }
+
+    public void RespawnPlayer()
+    {
+        //Respawn player above first square
+        camFollow.StartFollowingPlayer();
+        ResetToBeginning();
+        spawned = true;
+    }
+    public void DespawnPlayer()
+    {
+        //Despawn Player behind camera
+        transform.localPosition = new Vector3(0f, 0f, -100f);
+        spawned = false;
     }
 
     // Update is called once per frame
     private void Update()
     {
-        //Only allow input if the cube has reached the destination.
-        if (rb)
+        
+        if (grid.GetGameActive()&&!grid.GetGamePaused()&&!falling)
         {
-            if (Input.GetKey(KeyCode.W))
+            if (!spawned)
             {
-                rb.velocity = Vector3.forward * CubeSpeed;
+                RespawnPlayer();
             }
+            else
+            {
+                if (rb)
+                {
+                    if (Input.GetKey(KeyCode.W))
+                    {
+                        rb.velocity = Vector3.forward * CubeSpeed;
+                    }
 
-            if (Input.GetKey(KeyCode.S))
-            {
-                rb.velocity = Vector3.back * CubeSpeed;
-            }
+                    if (Input.GetKey(KeyCode.S))
+                    {
+                        rb.velocity = Vector3.back * CubeSpeed;
+                    }
 
-            if (Input.GetKey(KeyCode.A))
-            {
-                rb.velocity = Vector3.left * CubeSpeed;
-            }
-            if (Input.GetKey(KeyCode.D))
-            {
-                rb.velocity = Vector3.right * CubeSpeed;
-            }
+                    if (Input.GetKey(KeyCode.A))
+                    {
+                        rb.velocity = Vector3.left * CubeSpeed;
+                    }
+                    if (Input.GetKey(KeyCode.D))
+                    {
+                        rb.velocity = Vector3.right * CubeSpeed;
+                    }
+                }
+                if (transform.localPosition.y > 5)
+                {
+                    rb.velocity += Vector3.down * CubeGravity;
+                }
+            }   
         }
-        if (transform.localPosition.y > 5)
+        else if(!grid.GetGameActive()&& spawned)
         {
-            rb.velocity += Vector3.down * CubeGravity;
+            DespawnPlayer();
         }
+        
     }
 
     private void OnTriggerEnter(Collider other)
@@ -63,7 +96,12 @@ public class Player : MonoBehaviour
         if (other.CompareTag("TopCol"))
         {
             rb.velocity = Vector3.zero;
-            GameOver();
+            if (!falling)
+            {
+                GameOver();
+            }
+            IsFalling(false);
+            
         }
 
         if (other.CompareTag("Coin"))
@@ -72,19 +110,30 @@ public class Player : MonoBehaviour
             score++;
             Debug.Log("Score: " + score);
         }
+        if (other.CompareTag("Checkpoint"))
+        {
+            Debug.Log("Checkpoint touched");
+            transform.localPosition = new Vector3(other.transform.parent.transform.localPosition.x+grid.transform.localPosition.x, transform.localPosition.y, other.transform.parent.transform.localPosition.z+grid.transform.localPosition.z);
+            rb.velocity = Vector3.zero;
+            IsFalling(true);
+        }
+        if (other.CompareTag("BottomCol"))
+        {
+            transform.localPosition = new Vector3(-(grid.GetGridWidth() / 2) + offset, 30f, -(grid.GetGridWidth() / 2) + offset);
+        }
     }
 
     private void GameOver()
     {
-        ResetToBeginning();
+        DespawnPlayer();
+        grid.GameOver();
+        //ResetToBeginning();
     }
-
     private void ResetToBeginning()
     {
         transform.localPosition = new Vector3(-(grid.GetGridWidth() / 2) + offset, 15f, -(grid.GetGridWidth() / 2) + offset);
         StartCoroutine(ResetPosition());
     }
-
     private IEnumerator ResetPosition()
     {
         while (transform.localPosition.y > 6)
@@ -93,4 +142,26 @@ public class Player : MonoBehaviour
             yield return null;
         }
     }
+    public int GetScore()
+    {
+        return score;
+    }
+    private void IsFalling(bool fall)
+    {
+        if (fall)
+        {
+            falling = true;
+            camFollow.StartFollowingPlayer();
+            gameObject.GetComponent<SphereCollider>().enabled = false;
+            gameObject.GetComponent<Rigidbody>().useGravity = true;
+        }
+        else
+        {
+            falling = false;
+            camFollow.StopFollowingPlayer();
+            gameObject.GetComponent<SphereCollider>().enabled = true;
+            gameObject.GetComponent<Rigidbody>().useGravity = false;
+        }
+    }
+
 }

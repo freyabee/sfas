@@ -8,28 +8,36 @@ public class GridGenerator : MonoBehaviour
     public GameObject blockPrefab2;
     public GameObject basePrefab;
     public GameObject coinPrefab;
+    public GameObject holePrefab;
+    public Player currentPlayer;
     public Transform baseParent;
+    public Color obstacleColor;
     public int gridX;
     public int gridZ;
-    public bool LoadColliders = true;
-    public float blockAnimationTime = 1f;
+    public int obstacleNumber = 3;
+    public int coinsToProgress = 5;
     public float waitUpTime = 1f;
     public float waitDownTime = 1f;
-    public int obstacleNumber = 3;
-    public Color obstacleColor;
-
+    public bool LoadColliders = true;
+    public float blockAnimationTime = 1f;
+    
     // Start is called before the first frame update
     private List<GameObject> gridTiles;
-
-    private bool coinSpawned;
     private List<GameObject> raisedTiles;
     private List<int> raisedTileIDs;
+
+    private GameObject coin;
+    private GameObject checkpoint;
+
     private float width = 0;
     private float blockOffset;
     private float halfWidth;
-    private bool moving = false;
-    private GameObject coin;
 
+    private bool checkPointspawned = false;
+    private bool coinSpawned = false;
+    private bool moving = false;
+    private bool gameActive = false;
+    private bool paused = false;
     private void Awake()
     {
         raisedTiles = new List<GameObject>();
@@ -42,18 +50,40 @@ public class GridGenerator : MonoBehaviour
     {
         RegenGrid();
         InitializeCoin();
+        InitializeProgressor();
     }
 
     private void Update()
     {
-        if (!moving)
+        if (!moving&&!paused)
         {
             StartCoroutine(MoveBlock());
         }
-        if (!coinSpawned)
+        if (gameActive)
         {
-            SpawnCoin();
+            if (!coinSpawned)
+            {
+                int score = currentPlayer.GetScore();
+
+                if(score<coinsToProgress)
+                {
+                    SpawnCoin();
+                }
+                else if (!checkPointspawned)
+                {
+                    DespawnCoin();
+                    SpawnCheckpoint();
+                }
+            }
         }
+        else if (!gameActive)
+        {
+            if (coinSpawned)
+            {
+                DespawnCoin();
+            }
+        }
+        
     }
 
     public void InitializeCoin()
@@ -64,11 +94,24 @@ public class GridGenerator : MonoBehaviour
         coinHolder.transform.localPosition = Vector3.zero;
         coin = Instantiate(coinPrefab, Vector3.zero, transform.rotation);
         coin.transform.parent = coinHolder.transform;
+        DespawnCoin();
         coin.tag = "Coin";
         coin.name = "Coin";
-        SpawnCoin();
+        //SpawnCoin();
     }
 
+    public void InitializeProgressor()
+    {
+        GameObject checkPointHolder = new GameObject();
+        checkPointHolder.transform.parent = transform;
+        checkPointHolder.name = "Checkpoint";
+        checkPointHolder.transform.localPosition = Vector3.zero;
+        checkpoint = Instantiate(holePrefab, Vector3.zero, transform.rotation);
+        checkpoint.transform.parent = checkPointHolder.transform;
+        checkpoint.transform.localPosition = new Vector3(0, 0, -100);
+        checkpoint.name = "Checkpoint";
+        checkpoint.tag = "Checkpoint";
+    }
     public float GetGridWidth()
     {
         return width;
@@ -101,6 +144,10 @@ public class GridGenerator : MonoBehaviour
 
         while (tMovement < tTotal)
         {
+            while (paused)
+            {
+                yield return null;
+            }
             tMovement += Time.deltaTime;
             block.transform.localPosition = Vector3.Lerp(downPosition, upPosition, tMovement / tTotal);
             float lerp = Mathf.PingPong(tMovement, blockAnimationTime) / blockAnimationTime;
@@ -124,6 +171,11 @@ public class GridGenerator : MonoBehaviour
 
         while (tMovement < tTotal)
         {
+            while (paused)
+            {
+                yield return null;
+            }
+            
             tMovement += Time.deltaTime;
             block.transform.localPosition = Vector3.Lerp(upPosition, downPosition, tMovement / tTotal);
             float lerp = Mathf.PingPong(tMovement, blockAnimationTime) / blockAnimationTime;
@@ -140,6 +192,10 @@ public class GridGenerator : MonoBehaviour
 
     private IEnumerator MoveBlock()
     {
+        while (paused)
+        {
+            yield return null;
+        }
         float tTotal = blockAnimationTime;
 
         raisedTileIDs = GenerateUniqueRandom(obstacleNumber, gridTiles.Count);
@@ -251,6 +307,16 @@ public class GridGenerator : MonoBehaviour
                 BoxCollider tCol = topCollider.AddComponent<BoxCollider>();
                 tCol.size = new Vector3(1f, 3f, 1f);
                 tCol.isTrigger = true;
+
+
+                GameObject bottomCollider = new GameObject("BottomCollider");
+                bottomCollider.transform.parent = baseTile.transform;
+                bottomCollider.transform.localScale = new Vector3(1f, 1f, 1f);
+                bottomCollider.transform.localPosition = new Vector3(0f, -10f, 00f);
+                bottomCollider.tag = "BottomCol";
+                BoxCollider bCol = bottomCollider.AddComponent<BoxCollider>();
+                bCol.size = new Vector3(1f, 3f, 1f);
+                tCol.isTrigger = true;
             }
         }
         else
@@ -268,6 +334,25 @@ public class GridGenerator : MonoBehaviour
         Debug.Log("Coin Spawned");
     }
 
+    private void DespawnCoin()
+    {
+        coin.GetComponent<Coin>().Despawn();
+        coinSpawned = false;
+    }
+
+    private void SpawnCheckpoint()
+    {
+        Transform tile = gridTiles[Random.Range(0, gridTiles.Count)].transform;
+        checkpoint.GetComponent<Checkpoint>().SetCurrentParentTile(tile);
+        checkPointspawned = true;
+        Debug.Log("Checkpoint spawned");
+    }
+
+    private void DespawnCheckpoint()
+    {
+        checkpoint.GetComponent<Checkpoint>().Despawn();
+    }
+
     private List<int> GenerateUniqueRandom(int numValues, int max)
     {
         List<int> uniques = new List<int>();
@@ -283,5 +368,29 @@ public class GridGenerator : MonoBehaviour
             uniques.Add(currentNum);
         }
         return uniques;
+    }
+
+    public void SetGameActive(bool b)
+    {
+        gameActive = b;
+    }
+    public bool GetGameActive()
+    {
+        return gameActive;
+    }
+    public void SetGamePaused(bool b)
+    {
+        paused = b;
+        coin.GetComponent<Coin>().SetPaused(b);
+    }
+    public bool GetGamePaused()
+    {
+        return paused;
+    }
+
+    public void GameOver()
+    {
+        DespawnCoin();
+        DespawnCheckpoint();
     }
 }
